@@ -155,3 +155,7 @@ Read the matching doc before changing code in that area; code review enforces th
 - No continuously repainting animations; they peg the GPU on high-refresh displays.
 - Security matters, but do not over-index on dev-mode or maintainer-only features. Read [SECURITY.md](SECURITY.md) before auditing or triaging reports.
 - If a rule here fights the task in front of you, say so loudly and get a human sign-off before breaking it.
+
+## Personal fork
+
+Before modifying this fork, syncing upstream, or building, installing, or releasing it, read [forks/README.md](forks/README.md). Follow its maintenance rules and read the relevant patch spec for the task.
