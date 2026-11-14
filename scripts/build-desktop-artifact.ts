@@ -3029,6 +3029,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.win = winConfig;
   }
 
+  // 自用包只手动升级，最终配置不能携带仓库或 mock 更新源。
+  buildConfig.publish = null;
   return buildConfig;
 });
 
