@@ -210,3 +210,9 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 ## Additional tips
 
 - Security is important, but should not be over-indexed on, especially for dev mode/maintainer-only features.
+
+# Extra
+
+## Personal fork
+
+Before modifying this fork, syncing upstream, or building, installing, or releasing it, read [forks/README.md](forks/README.md). Follow its maintenance rules and read the relevant patch spec for the task.

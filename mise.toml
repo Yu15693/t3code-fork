@@ -1,0 +1,7 @@
+[tools]
+node = "26.12.1"
+pnpm = "12.14.0"
+"npm:vite-plus" = "1.4.0"
+
+[env]
+PNPM_CONFIG_REGISTRY = "https://registry.npmjs.org"
