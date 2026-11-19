@@ -1273,4 +1273,196 @@ describe("AntigravityAdapterV2 session system prompt", () => {
         }
       }).pipe(Effect.provide(layerSession)),
   );
+
+  it.live("continues and settles when a background task wakes Antigravity after end_turn", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const path = yield* Path.Path;
+      const crypto = yield* SecureRandom.SecureRandom;
+      const mockAgentPath = yield* path.fromFileUrl(
+        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+      );
+      type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+      type UpdateHandler = Parameters<RuntimeService["handleSessionUpdate"]>[0];
+      let emitUpdate: UpdateHandler | undefined;
+      let promptCalls = 0;
+      let activeNativeSessionId = "";
+      const continuationOffered = yield* Deferred.make<void>();
+      const instanceId = ProviderInstanceId.make("antigravity-post-settle-test");
+      const adapter = yield* makeAntigravityAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        makeRuntime: (input) =>
+          makeAntigravityAcpRuntime({
+            ...input,
+            childProcessSpawner,
+            spawn: {
+              command: process.execPath,
+              args: [mockAgentPath],
+              cwd: input.cwd,
+              env: { T3_ACP_ANTIGRAVITY: "1" },
+            },
+          }).pipe(
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.map((runtime): RuntimeService => ({
+              ...runtime,
+              start: () =>
+                runtime.start().pipe(
+                  Effect.tap((started) =>
+                    Effect.sync(() => {
+                      activeNativeSessionId = started.sessionId;
+                    }),
+                  ),
+                ),
+              handleSessionUpdate: (handler) => {
+                emitUpdate = handler;
+                return runtime.handleSessionUpdate(handler);
+              },
+              prompt: (request, promptOptions) =>
+                Effect.sync(() => {
+                  promptCalls += 1;
+                }).pipe(Effect.andThen(runtime.prompt(request, promptOptions))),
+            })),
+          ),
+        withProcess: (_stop, task) => task,
+        defaultModel: Effect.undefined,
+        continuationRequests: {
+          offer: () => Deferred.succeed(continuationOffered, undefined).pipe(Effect.asVoid),
+        },
+      });
+      const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-ag-wake-" });
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: workspace,
+      });
+      const threadId = ThreadId.make("thread-antigravity-post-settle");
+      const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-antigravity-post-settle"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const collected: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+      const turn1Done = yield* Deferred.make<void>();
+      const turn2Done = yield* Deferred.make<string>();
+      yield* session.events.pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            collected.push(event);
+            if (event.type === "turn.terminal") {
+              if (event.runOrdinal === 1) {
+                yield* Deferred.succeed(turn1Done, undefined);
+              } else if (event.runOrdinal === 2) {
+                yield* Deferred.succeed(turn2Done, event.status);
+              }
+            }
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      const appThread = {
+        createdBy: "user",
+        creationSource: "web",
+        id: threadId,
+        projectId: ProjectId.make("project-antigravity-post-settle"),
+        title: "Antigravity post-settle wake",
+        providerInstanceId: instanceId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        activeProviderThreadId: providerThread.id,
+        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+        forkedFrom: null,
+        createdAt: now,
+        updatedAt: now,
+        archivedAt: null,
+        settledOverride: null,
+        settledAt: null,
+        lastVisitedAt: null,
+        deletedAt: null,
+      } as const;
+
+      yield* session.startTurn({
+        appThread,
+        threadId,
+        runId: RunId.make("run-antigravity-post-settle-1"),
+        runOrdinal: 1,
+        providerTurnOrdinal: 1,
+        attemptId: RunAttemptId.make("attempt-antigravity-post-settle-1"),
+        rootNodeId: NodeId.make("node-antigravity-post-settle-1"),
+        providerThread,
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          messageId: MessageId.make("message-antigravity-post-settle-1"),
+          text: "start background job",
+          attachments: [],
+        },
+        modelSelection,
+        runtimePolicy,
+      });
+      yield* Deferred.await(turn1Done).pipe(Effect.timeout("5 seconds"));
+      assert.equal(promptCalls, 1);
+      assert.isDefined(emitUpdate);
+
+      // Simulate Antigravity ACP emitting post-settle completion + assistant wake reply.
+      assert.isNotEmpty(activeNativeSessionId);
+      yield* emitUpdate!({
+        sessionId: activeNativeSessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call_bg_1",
+          title: "sleep 12 && echo BG_DONE_42",
+          status: "completed",
+          rawOutput: { output: "BG_DONE_42\n", exit_code: 0 },
+        },
+      });
+      yield* emitUpdate!({
+        sessionId: activeNativeSessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "BG_FINISHED" },
+        },
+      });
+      yield* Deferred.await(continuationOffered).pipe(Effect.timeout("5 seconds"));
+
+      yield* session.startTurn({
+        appThread,
+        threadId,
+        runId: RunId.make("run-antigravity-post-settle-2"),
+        runOrdinal: 2,
+        providerTurnOrdinal: 2,
+        attemptId: RunAttemptId.make("attempt-antigravity-post-settle-2"),
+        rootNodeId: NodeId.make("node-antigravity-post-settle-2"),
+        providerThread,
+        message: {
+          createdBy: "agent",
+          creationSource: "provider",
+          messageId: MessageId.make("message-antigravity-post-settle-2"),
+          text: "",
+          attachments: [],
+        },
+        modelSelection,
+        runtimePolicy,
+      });
+      const continuationStatus = yield* Deferred.await(turn2Done).pipe(Effect.timeout("6 seconds"));
+      assert.equal(continuationStatus, "completed");
+      assert.equal(promptCalls, 1);
+      const messageTexts = collected
+        .filter((event) => event.type === "message.updated")
+        .map((event) => event.message.text);
+      assert.isTrue(messageTexts.some((text) => text.includes("BG_FINISHED")));
+    }).pipe(Effect.provide(layerSession)),
+  );
 });

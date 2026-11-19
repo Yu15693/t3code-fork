@@ -4037,10 +4037,15 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             acpSubagentStatusBlocksTurnSettlement(subagent.task.status),
           );
 
+        const allowsDeferredFinalize = (context: ActiveAcpTurn): boolean =>
+          flavor.deferFinalizeForBackgroundWork === true ||
+          (postSettleContinuationEnabled &&
+            acpIsProviderContinuationMessage(context.input.message));
+
         const rearmDeferredFinalize =
           /* Provider events include streaming deltas; avoid a span for each update. */
           Effect.fnUntraced(function* (context: ActiveAcpTurn) {
-            if (!flavor.deferFinalizeForBackgroundWork) return;
+            if (!allowsDeferredFinalize(context)) return;
             if (!context.promptSettled || context.finalized) return;
             if (hasDeferredBackgroundWork(context)) return;
             yield* scheduleDeferredFinalize(context);
@@ -8227,7 +8232,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         });
 
         scheduleDeferredFinalize = Effect.fn("scheduleDeferredFinalize")(function* (context) {
-          if (!flavor.deferFinalizeForBackgroundWork) return;
+          if (!allowsDeferredFinalize(context)) return;
           if (!context.promptSettled || context.finalized || context.interrupted) return;
           if (hasDeferredBackgroundWork(context)) return;
           context.backgroundFinalizeGeneration += 1;
