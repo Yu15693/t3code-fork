@@ -81,7 +81,7 @@ Spec 不记录某次构建的验证状态。源码检查写进提交说明，安
 - **环境**：工具链由 `mise.toml` 固定，依赖按[开发指南](../docs/operations/development.md#first-checkout)准备，版本以 [package.json](../package.json) 和锁文件为准。
 - **源码检查**：功能改动按 [AGENTS.md 的验证要求](../AGENTS.md#verifying)执行，推送前运行 `vp run check:changed <新>`，即以当前分支的上游 tag 为基准。修改运行时提示词时，还需按 [evals 指南](../evals/README.md)验证模型行为。只改文档时只检查入口、链接和命令来源。
 - **构建**：
-  - macOS 桌面包入口为 `vp run dist:desktop:dmg`。系统依赖、默认不做发行签名的行为及产物位置见 [Desktop artifacts](../docs/operations/development.md#desktop-artifacts)。
+  - macOS 桌面包入口为 `T3CODE_DESKTOP_VERSION=<上游版本> vp run dist:desktop:dmg`（或追加 `-- --build-version <上游版本>`）。上游在打 `v<版本>` tag 时 `package.json` 仍保留上一个版本号，且 `resolveTaggedSourceVersion` 仅在 `HEAD` 直接指向 `vX.Y.Z` tag 时自动识别；在 `patches/v*` 分支上直接运行不带版本号的命令会回落到旧版本号（例如 `0.1.9`）。系统依赖、默认不做发行签名的行为及产物位置见 [Desktop artifacts](../docs/operations/development.md#desktop-artifacts)。
   - 仅构建 Linux 无桌面服务端归档（CLI archive）时，不涉及 `apps/mobile`；安装依赖应通过 `vp install --frozen-lockfile --filter t3...` 过滤掉移动端 workspace，避免移动端包的 `postinstall`（如 `react-native-enriched-markdown`）在每次干净构建时现场下载无关的 iOS 资产。随后按需执行版本写入、resource monitor 编译、`vp run --filter t3 build`、`apps/server/scripts/cli.ts build-exe`、`scripts/build-cli-archive.ts`，并用 `scripts/smoke-cli-archive.ts --archive <归档> --expect-version <版本>` 校验。归档包含一层 `t3-<版本>-<平台>-<架构>/` 顶层目录，解压到运行时缓存目录时需配合 `--strip-components=1`。
 - **安装包验证**：实际启动安装包，确认后台服务来自该安装包，并检查各 Spec 的目标行为；开发进程通过不能代替安装包验证。首次验证使用独立目录和测试数据，真实数据副本按 [Test data](../AGENTS.md#test-data) 准备。`T3CODE_HOME` 只控制服务状态，不能隔离 [Electron 资料目录](../apps/desktop/src/app/DesktopUserData.ts)；并行试用时还需核对应用身份和实际连接的服务。
 - **打标签**：准备安装的构建通过验证后，在其提交上创建 `yu/v<上游版本>-<序号>` 带说明的标签，说明中记录应用版本、构建环境与命令、产物校验值和验证结果，然后单独推送该标签。
