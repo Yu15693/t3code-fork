@@ -1101,6 +1101,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
         const told = yield* Ref.make<{
           readonly agent: string;
           readonly orchestration: boolean;
+          readonly browser: boolean;
           readonly device: boolean;
           readonly backgroundWait: boolean;
           readonly runtime: string | undefined;
@@ -2483,6 +2484,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 yield* Ref.set(told, {
                   agent: context.run.agentId,
                   orchestration: false,
+                  browser: false,
                   device: false,
                   backgroundWait: false,
                   runtime: undefined,
@@ -2871,9 +2873,11 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
         const resolveUserMessage = Effect.fnUntraced(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           mcpServers: Record<string, McpServerConfig> | undefined,
+          hasBrowserTools: boolean,
           hasDeviceTools: boolean,
           delivered: {
             readonly orchestration: boolean;
+            readonly browser: boolean;
             readonly device: boolean;
             readonly backgroundWait: boolean;
             readonly runtime: string | undefined;
@@ -2895,8 +2899,10 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               resolveExtractedTextPath: host.resolveExtractedTextPath,
             }),
             hasT3Mcp: mcpServers !== undefined,
+            hasBrowserTools,
             hasDeviceTools,
             orchestrationDelivered: delivered.orchestration,
+            browserInstructionsDelivered: delivered.browser,
             deviceInstructionsDelivered: delivered.device,
             providerInstructions: CURSOR_BACKGROUND_WAIT_INSTRUCTIONS,
             providerInstructionsDelivered: delivered.backgroundWait,
@@ -2981,6 +2987,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             });
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const mcpServers = cursorMcpServers(mcpSession);
+            const hasBrowserTools =
+              mcpServers !== undefined && mcpSession?.browserToolsAvailable === true;
             const hasDeviceTools =
               mcpServers !== undefined && mcpSession?.capabilities?.has("device") === true;
             const known = yield* Ref.get(told);
@@ -2990,6 +2998,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 ? known
                 : {
                     orchestration: turnInput.nativeThreadHasTurns ?? turnInput.runOrdinal > 1,
+                    browser: false,
                     device: false,
                     backgroundWait: false,
                     runtime: undefined,
@@ -3039,6 +3048,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                   : yield* resolveUserMessage(
                       turnInput,
                       mcpServers,
+                      hasBrowserTools,
                       hasDeviceTools,
                       delivered,
                       dropped?.text,
@@ -3094,6 +3104,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               yield* Ref.set(told, {
                 agent: agent.nativeThreadId,
                 orchestration: !compacted && (delivered.orchestration || mcpServers !== undefined),
+                browser: !compacted && hasBrowserTools,
                 device: !compacted && hasDeviceTools,
                 backgroundWait:
                   !compacted && (delivered.backgroundWait || mcpServers !== undefined),
@@ -3604,6 +3615,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                   Ref.set(told, {
                     agent,
                     orchestration: false,
+                    browser: false,
                     device: false,
                     backgroundWait: false,
                     runtime: undefined,
