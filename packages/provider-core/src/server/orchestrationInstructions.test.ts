@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 
 import {
+  T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS,
   T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH,
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
@@ -84,7 +85,12 @@ describe("T3 device instructions", () => {
   });
 
   it("reach ACP agents again when device access changes mid-thread", () => {
-    const state = { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false } as const;
+    const state = {
+      interactionMode: "default",
+      hasT3Mcp: true,
+      hasBrowserTools: false,
+      hasDeviceTools: false,
+    } as const;
     const withDevices = t3AcpPromptWithInstructions({
       prompt: "Check the login screen.",
       state: { ...state, hasDeviceTools: true },
@@ -96,5 +102,60 @@ describe("T3 device instructions", () => {
       "Again.",
     );
     assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## T3 Code devices");
+  });
+});
+
+describe("T3 browser instructions", () => {
+  it("keep preview_* rules out of shared orchestration instructions", () => {
+    assert.notInclude(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "preview_*");
+    assert.include(T3_CODE_BROWSER_TOOL_INSTRUCTIONS, "## T3 Code browser");
+    assert.include(T3_CODE_BROWSER_TOOL_INSTRUCTIONS, "preview_*");
+  });
+
+  it("gate browser instructions by hasBrowserTools for ACP, OpenCode and Cursor", () => {
+    const withoutBrowser = {
+      interactionMode: "default",
+      hasT3Mcp: true,
+      hasBrowserTools: false,
+      hasDeviceTools: false,
+    } as const;
+    const acpNoBrowser = t3AcpPromptWithInstructions({
+      prompt: "Check page.",
+      state: withoutBrowser,
+    });
+    assert.notInclude(acpNoBrowser, "## T3 Code browser");
+    assert.notInclude(acpNoBrowser, "preview_*");
+
+    const acpWithBrowser = t3AcpPromptWithInstructions({
+      prompt: "Check page.",
+      state: { ...withoutBrowser, hasBrowserTools: true },
+      previousState: withoutBrowser,
+    });
+    assert.include(acpWithBrowser, T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim());
+
+    assert.include(t3OrchestrationSystemPrompt(true, false, true), "## T3 Code browser");
+    assert.notInclude(t3OrchestrationSystemPrompt(true, false, false), "preview_*");
+
+    const cursorNoBrowser = t3OrchestrationPrompt({
+      prompt: "Check page.",
+      hasT3Mcp: true,
+      hasBrowserTools: false,
+      hasDeviceTools: false,
+      orchestrationDelivered: false,
+      browserInstructionsDelivered: false,
+      deviceInstructionsDelivered: false,
+    });
+    assert.notInclude(cursorNoBrowser, "preview_*");
+
+    const cursorWithBrowser = t3OrchestrationPrompt({
+      prompt: "Check page.",
+      hasT3Mcp: true,
+      hasBrowserTools: true,
+      hasDeviceTools: false,
+      orchestrationDelivered: false,
+      browserInstructionsDelivered: false,
+      deviceInstructionsDelivered: false,
+    });
+    assert.include(cursorWithBrowser, T3_CODE_BROWSER_TOOL_INSTRUCTIONS.trim());
   });
 });
