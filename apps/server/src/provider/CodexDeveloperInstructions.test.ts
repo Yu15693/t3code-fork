@@ -83,6 +83,17 @@ describe("Codex device context", () => {
     NodeAssert.ok(!tools(true).includes("ToolSearch"));
     NodeAssert.ok(!tools(false).includes("## T3 Code devices"));
   });
+
+  it("omits all preview_* instructions when browser access is disabled", () => {
+    const joined = Object.values(
+      buildCodexAdditionalContext({ model: "gpt-6.1-sol" }, { browser: false, device: false }),
+    )
+      .map((entry) => entry.value)
+      .join("\n");
+
+    NodeAssert.ok(!joined.includes("## T3 Code browser"));
+    NodeAssert.ok(!joined.includes("preview_*"));
+  });
 });
 
 function runtimeInstructions(runtime: Parameters<typeof buildCodexAdditionalContext>[0]) {

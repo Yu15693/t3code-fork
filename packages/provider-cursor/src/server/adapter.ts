@@ -1062,6 +1062,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
         const told = yield* Ref.make<{
           readonly agent: string;
           readonly orchestration: boolean;
+          readonly browser: boolean;
           readonly device: boolean;
         } | null>(null);
         // Cursor drops a run cancelled before its first checkpoint, so the next message carries its prompt.
@@ -2622,8 +2623,13 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
         const resolveUserMessage = Effect.fnUntraced(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           mcpServers: Record<string, McpServerConfig> | undefined,
+          hasBrowserTools: boolean,
           hasDeviceTools: boolean,
-          delivered: { readonly orchestration: boolean; readonly device: boolean },
+          delivered: {
+            readonly orchestration: boolean;
+            readonly browser: boolean;
+            readonly device: boolean;
+          },
           interrupted: string | undefined,
         ) {
           const rawText = turnInput.message.text;
@@ -2641,8 +2647,10 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               resolveExtractedTextPath: host.resolveExtractedTextPath,
             }),
             hasT3Mcp: mcpServers !== undefined,
+            hasBrowserTools,
             hasDeviceTools,
             orchestrationDelivered: delivered.orchestration,
+            browserInstructionsDelivered: delivered.browser,
             deviceInstructionsDelivered: delivered.device,
           });
           const userText =
@@ -2712,6 +2720,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             });
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const mcpServers = cursorMcpServers(mcpSession);
+            const hasBrowserTools =
+              mcpServers !== undefined && mcpSession?.browserToolsAvailable === true;
             const hasDeviceTools =
               mcpServers !== undefined && mcpSession?.capabilities?.has("device") === true;
             const known = yield* Ref.get(told);
@@ -2721,6 +2731,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 ? known
                 : {
                     orchestration: turnInput.nativeThreadHasTurns ?? turnInput.runOrdinal > 1,
+                    browser: false,
                     device: false,
                   };
             const interrupted = yield* Ref.get(interruptedPrompt);
@@ -2757,6 +2768,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                   : yield* resolveUserMessage(
                       turnInput,
                       mcpServers,
+                      hasBrowserTools,
                       hasDeviceTools,
                       delivered,
                       dropped?.text,
@@ -2801,6 +2813,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               yield* Ref.set(told, {
                 agent: agent.nativeThreadId,
                 orchestration: !compacted && (delivered.orchestration || mcpServers !== undefined),
+                browser: !compacted && hasBrowserTools,
                 device: !compacted && hasDeviceTools,
               });
             }
@@ -3268,7 +3281,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               // The kept turns may predate a compaction, so the instructions are sent again.
               const forgetConversation = (agent: string) =>
                 Effect.all([
-                  Ref.set(told, { agent, orchestration: false, device: false }),
+                  Ref.set(told, { agent, orchestration: false, browser: false, device: false }),
                   Ref.set(interruptedPrompt, null),
                   Ref.set(resumedAgent, null),
                 ]);
